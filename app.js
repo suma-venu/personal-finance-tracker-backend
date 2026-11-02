@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
-
+const authRoutes = require('./routes/authRoutes')
+const transactionRoutes = require('./routes/transactionRoutes')
 const app = express()
 
  
@@ -22,5 +23,11 @@ message: 'Personal finance tracker API is running'
 
 
  })
+
+ // Authentication routes
+app.use('/api/auth', authRoutes)
+
+// Transaction routes
+app.use('/api/transactions', transactionRoutes)
 
 module.exports = app
