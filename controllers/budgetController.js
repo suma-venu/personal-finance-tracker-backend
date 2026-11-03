@@ -95,15 +95,23 @@ const getBudgets = async (req, res) => {
 
     const budgetsWithSpending = await Promise.all(
       budgets.map(async (budget) => {
-        const expenses = await Transaction.find({
-          user: req.user.userId,
-          category: budget.category,
-          type: 'expense',
-          date: {
-            $gte: startDate,
-            $lt: endDate
-          }
-        })
+        const escapedCategory = budget.category.replace(
+  /[.*+?^${}()|[\]\\]/g,
+  '\\$&'
+)
+
+const expenses = await Transaction.find({
+  user: req.user.userId,
+  category: {
+    $regex: `^${escapedCategory}$`,
+    $options: 'i'
+  },
+  type: 'expense',
+  date: {
+    $gte: startDate,
+    $lt: endDate
+  }
+})
 
         const spent = expenses.reduce(
           (total, transaction) => total + transaction.amount,
