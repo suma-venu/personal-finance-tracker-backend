@@ -2,6 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const authRoutes = require('./routes/authRoutes')
 const transactionRoutes = require('./routes/transactionRoutes')
+const budgetRoutes = require('./routes/budgetRoutes')
 const app = express()
 
  
@@ -29,5 +30,8 @@ app.use('/api/auth', authRoutes)
 
 // Transaction routes
 app.use('/api/transactions', transactionRoutes)
+
+//Budget routes
+app.use('/api/budgets', budgetRoutes)
 
 module.exports = app
