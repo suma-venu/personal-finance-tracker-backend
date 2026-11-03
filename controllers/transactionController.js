@@ -55,16 +55,109 @@ const addTransaction = async (req, res) => {
 
 const getTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find({
+    const { search, type, category, startDate, endDate, sort } = req.query
+
+    // Validate transaction type
+    if (type && !['income', 'expense'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid transaction type'
+      })
+    }
+
+    // Validate sorting option
+    if (sort && !['newest', 'oldest'].includes(sort)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid sorting option'
+      })
+    }
+
+    // Validate text filters
+    if (
+      (search !== undefined && typeof search !== 'string') ||
+      (category !== undefined && typeof category !== 'string')
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search and category must be text'
+      })
+    }
+
+    // Validate date format
+    const isValidDate = (date) => {
+      if (!date) return true
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+
+      const parsedDate = new Date(`${date}T00:00:00.000Z`)
+
+      return !isNaN(parsedDate.getTime()) &&
+        parsedDate.toISOString().startsWith(date)
+    }
+
+    if (!isValidDate(startDate) || !isValidDate(endDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Use YYYY-MM-DD'
+      })
+    }
+
+    // Check date range
+    if (startDate && endDate && startDate > endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date cannot be after end date'
+      })
+    }
+
+    // Build database filter
+    const filter = {
       user: req.user.userId
-    }).sort({ date: -1 })
+    }
+
+    if (type) filter.type = type
+
+    if (category?.trim()) {
+      filter.category = category.trim()
+    }
+
+    // Escape special regex characters in search
+    if (search?.trim()) {
+      const safeSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      filter.title = {
+        $regex: safeSearch,
+        $options: 'i'
+      }
+    }
+
+    // Date filtering
+    if (startDate || endDate) {
+      filter.date = {}
+
+      if (startDate) {
+        filter.date.$gte = new Date(`${startDate}T00:00:00.000Z`)
+      }
+
+      if (endDate) {
+        const nextDay = new Date(`${endDate}T00:00:00.000Z`)
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+        filter.date.$lt = nextDay
+      }
+    }
+
+    const sortOrder = sort === 'oldest' ? 1 : -1
+
+    const transactions = await Transaction.find(filter).sort({
+      date: sortOrder
+    })
 
     return res.status(200).json({
       success: true,
       count: transactions.length,
       transactions
     })
-
   } catch (error) {
     return res.status(500).json({
       success: false,
