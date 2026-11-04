@@ -1,18 +1,17 @@
+const mongoose = require('mongoose')
 const Transaction = require('../models/Transaction')
 
 const addTransaction = async (req, res) => {
   try {
     const { title, amount, type, category, date, description } = req.body
 
-    // Validate required fields
-    if (!title || !amount || !type || !category) {
+    if (!title?.trim() || !amount || !type || !category?.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields'
       })
     }
 
-    // Validate amount
     if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({
         success: false,
@@ -20,7 +19,6 @@ const addTransaction = async (req, res) => {
       })
     }
 
-    // Validate transaction type
     if (!['income', 'expense'].includes(type)) {
       return res.status(400).json({
         success: false,
@@ -28,15 +26,14 @@ const addTransaction = async (req, res) => {
       })
     }
 
-    // Create transaction
     const transaction = await Transaction.create({
       user: req.user.userId,
-      title,
+      title: title.trim(),
       amount: Number(amount),
       type,
-      category,
-      date,
-      description
+      category: category.trim(),
+      date: date || Date.now(),
+      description: description || ''
     })
 
     return res.status(201).json({
@@ -44,7 +41,6 @@ const addTransaction = async (req, res) => {
       message: 'Transaction added successfully',
       transaction
     })
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -57,7 +53,6 @@ const getTransactions = async (req, res) => {
   try {
     const { search, type, category, startDate, endDate, sort } = req.query
 
-    // Validate transaction type
     if (type && !['income', 'expense'].includes(type)) {
       return res.status(400).json({
         success: false,
@@ -65,7 +60,6 @@ const getTransactions = async (req, res) => {
       })
     }
 
-    // Validate sorting option
     if (sort && !['newest', 'oldest'].includes(sort)) {
       return res.status(400).json({
         success: false,
@@ -73,27 +67,13 @@ const getTransactions = async (req, res) => {
       })
     }
 
-    // Validate text filters
-    if (
-      (search !== undefined && typeof search !== 'string') ||
-      (category !== undefined && typeof category !== 'string')
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search and category must be text'
-      })
-    }
+    const isValidDate = (value) => {
+      if (!value) return true
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
 
-    // Validate date format
-    const isValidDate = (date) => {
-      if (!date) return true
-
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
-
-      const parsedDate = new Date(`${date}T00:00:00.000Z`)
-
-      return !isNaN(parsedDate.getTime()) &&
-        parsedDate.toISOString().startsWith(date)
+      const parsed = new Date(`${value}T00:00:00.000Z`)
+      return !isNaN(parsed.getTime()) &&
+        parsed.toISOString().startsWith(value)
     }
 
     if (!isValidDate(startDate) || !isValidDate(endDate)) {
@@ -103,7 +83,6 @@ const getTransactions = async (req, res) => {
       })
     }
 
-    // Check date range
     if (startDate && endDate && startDate > endDate) {
       return res.status(400).json({
         success: false,
@@ -111,28 +90,16 @@ const getTransactions = async (req, res) => {
       })
     }
 
-    // Build database filter
-    const filter = {
-      user: req.user.userId
-    }
+    const filter = { user: req.user.userId }
 
     if (type) filter.type = type
+    if (category?.trim()) filter.category = category.trim()
 
-    if (category?.trim()) {
-      filter.category = category.trim()
-    }
-
-    // Escape special regex characters in search
     if (search?.trim()) {
       const safeSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-      filter.title = {
-        $regex: safeSearch,
-        $options: 'i'
-      }
+      filter.title = { $regex: safeSearch, $options: 'i' }
     }
 
-    // Date filtering
     if (startDate || endDate) {
       filter.date = {}
 
@@ -166,13 +133,19 @@ const getTransactions = async (req, res) => {
   }
 }
 
-
 const updateTransaction = async (req, res) => {
   try {
-    const { title, amount, type, category, date, description } = req.body
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid transaction ID'
+      })
+    }
 
     const transaction = await Transaction.findOne({
-      _id: req.params.id,
+      _id: id,
       user: req.user.userId
     })
 
@@ -183,12 +156,68 @@ const updateTransaction = async (req, res) => {
       })
     }
 
-    if (title !== undefined) transaction.title = title
-    if (amount !== undefined) transaction.amount = amount
-    if (type !== undefined) transaction.type = type
-    if (category !== undefined) transaction.category = category
-    if (date !== undefined) transaction.date = date
-    if (description !== undefined) transaction.description = description
+    const { title, amount, type, category, date, description } = req.body
+
+    if (title !== undefined) {
+      if (typeof title !== 'string' || !title.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Title cannot be empty'
+        })
+      }
+      transaction.title = title.trim()
+    }
+
+    if (amount !== undefined) {
+      if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Amount must be greater than zero'
+        })
+      }
+      transaction.amount = Number(amount)
+    }
+
+    if (type !== undefined) {
+      if (!['income', 'expense'].includes(type)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Type must be income or expense'
+        })
+      }
+      transaction.type = type
+    }
+
+    if (category !== undefined) {
+      if (typeof category !== 'string' || !category.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category cannot be empty'
+        })
+      }
+      transaction.category = category.trim()
+    }
+
+    if (date !== undefined) {
+      const parsedDate = new Date(date)
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid transaction date'
+        })
+      }
+      transaction.date = parsedDate
+    }
+
+    if (description !== undefined) {
+      if (typeof description !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Description must be text'
+        })
+      }
+      transaction.description = description.trim()
+    }
 
     await transaction.save()
 
@@ -197,7 +226,6 @@ const updateTransaction = async (req, res) => {
       message: 'Transaction updated successfully',
       transaction
     })
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -206,11 +234,19 @@ const updateTransaction = async (req, res) => {
   }
 }
 
-
 const deleteTransaction = async (req, res) => {
   try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid transaction ID'
+      })
+    }
+
     const transaction = await Transaction.findOneAndDelete({
-      _id: req.params.id,
+      _id: id,
       user: req.user.userId
     })
 
@@ -225,7 +261,6 @@ const deleteTransaction = async (req, res) => {
       success: true,
       message: 'Transaction deleted successfully'
     })
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -233,7 +268,6 @@ const deleteTransaction = async (req, res) => {
     })
   }
 }
-
 
 module.exports = {
   addTransaction,
